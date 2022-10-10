@@ -459,6 +459,14 @@ def set_cfg(cfg):
     # Perform ReLU inplace
     cfg.mem.inplace = False
 
+    cfg.localWL = CN()
+
+    cfg.localWL.hops = 3
+
+    cfg.localWL.pool = 'sum'
+
+    cfg.localWL.dropout = 0.8
+
     # Set user customized cfgs
     for func in register.config_dict.values():
         func(cfg)

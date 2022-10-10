@@ -30,7 +30,7 @@ class GNNNodeHead(nn.Module):
                    batch.node_label[batch.node_label_index]
 
     def forward(self, batch):
-        batch = self.layer_post_mp(batch)
+        batch.node_feature = self.layer_post_mp(batch.node_feature)
         pred, label = self._apply_index(batch)
         return pred, label
 

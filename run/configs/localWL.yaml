@@ -1,0 +1,42 @@
+# The recommended basic settings for GNN
+out_dir: results
+dataset:
+  format: PyG
+  name: Cornell
+  task: node
+  task_type: classification
+  transductive: True
+  split: [0.6, 0.2, 0.2]
+  augment_feature: []
+  augment_feature_dims: [0]
+  augment_feature_repr: position
+  augment_label: ''
+  augment_label_dims: 0
+  transform: none
+train:
+  batch_size: 32
+  eval_period: 20
+  ckpt_period: 100
+model:
+  type: localWL
+  loss_fun: cross_entropy
+  edge_decoding: dot
+  graph_pooling: add
+gnn:
+  layers_post_mp: 1
+  dim_inner: 256
+  layer_type: generalconv
+  stage_type: stack
+  batchnorm: True
+  act: prelu
+  dropout: 0.0
+  agg: add
+  normalize_adj: False
+optim:
+  optimizer: adam
+  base_lr: 0.01
+  max_epoch: 400
+localWL:
+  hops: 3
+  pool: sum
+  dropout: 0.8
