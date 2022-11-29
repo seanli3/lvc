@@ -2,11 +2,11 @@
 out_dir: results
 dataset:
   format: PyG
-  name: Chameleon
-  task: node
+  name: TU_PROTEINS
+  task: graph
   task_type: classification
   transductive: True
-  split: [0.6, 0.2, 0.2]
+  split: [0.8, 0.2]
   augment_feature: []
   augment_feature_dims: [0]
   augment_feature_repr: position
@@ -18,7 +18,7 @@ train:
   eval_period: 20
   ckpt_period: 100
 model:
-  type: localWL
+  type: localWL_graph
   loss_fun: cross_entropy
   edge_decoding: dot
   graph_pooling: add
@@ -37,6 +37,6 @@ optim:
   base_lr: 0.01
   max_epoch: 400
 localWL:
-  hops: 6
+  hops: 4
   pool: sum
-  dropout: 0.9
+  dropout: 0.3

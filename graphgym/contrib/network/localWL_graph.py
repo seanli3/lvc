@@ -78,20 +78,17 @@ def max_reaching_centrality(graph, k):
         q = sorted(q, key=lambda x:x[1])
     return list(map(lambda x:x[0], q))
 
-@register_network('localWL')
+@register_network('localWL_graph')
 class LocalWLGNN(torch.nn.Module):
     def __init__(self, dim_in, dim_out):
         super().__init__()
-        # self.lins = nn.ModuleList()
-        # self.lins.append(nn.Linear(dim_in, cfg.gnn.dim_inner))
-        self.lin =  nn.Linear(dim_in, cfg.gnn.dim_inner)
+        self.lins = nn.ModuleList()
+        self.lins.append(nn.Linear(dim_in, cfg.gnn.dim_inner))
         hops = cfg['localWL']['hops']
-        # for _ in range(hops):
-        #     self.lins.append(nn.Linear(dim_in, cfg.gnn.dim_inner))
-        self.eps = nn.Parameter(torch.ones(1, device=cfg['device'])*0.1)
-        self.post_mp = GNNNodeHead(dim_in=cfg.gnn.dim_inner*(hops+1), dim_out=dim_out)
-        # self.beta1 = nn.ParameterList([nn.Parameter(torch.ones(1)*0.1) for _ in range(hops)])
-        self.beta2 = nn.ParameterList([nn.Parameter(torch.ones(1, device=cfg['device'])*0.1) for _ in range(hops)])
+        for _ in range(hops):
+            self.lins.append(nn.Linear(cfg.gnn.dim_inner, cfg.gnn.dim_inner))
+        self.eps = nn.Parameter(torch.ones(1, device=cfg['device']))
+        self.post_mp = GNNGraphHead(dim_in=cfg.gnn.dim_inner*(hops+1), dim_out=dim_out)
 
     def forward(self, b, loader):
         batch = deepcopy(b)
@@ -100,16 +97,15 @@ class LocalWLGNN(torch.nn.Module):
         agg_scatter = batch.agg_scatter
         agg_node_index = batch.agg_node_index
 
-        x = self.lin(x)
+        x = self.lins[0](x)
         out = (1+self.eps)*x
+        h = x
         for hop in range(1, len(agg_node_index) + 1):
-            h = x[agg_scatter[hop-1]]
+            h = h[agg_scatter[hop-1]]
             h = torch.zeros(x.shape[0], h.shape[1], device=x.device).scatter_reduce(
                     0, agg_node_index[hop-1].view(-1, 1).broadcast_to(h.shape), h, reduce=cfg.localWL.pool,
                     include_self=False)
-            h = (1+self.beta2[hop-1])*h
             out = torch.cat([out, h], dim=1)
-            # out =  h
         out = F.dropout(out, p=cfg.localWL.dropout, training=self.training)
 
         batch.node_feature = out

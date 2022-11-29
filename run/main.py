@@ -3,6 +3,7 @@ import os
 
 import torch
 from torch_geometric import seed_everything
+import networkx as nx
 
 from graphgym.cmd_args import parse_args
 from graphgym.config import cfg, dump_cfg, load_cfg, set_run_dir, set_out_dir
@@ -15,6 +16,14 @@ from graphgym.train import train
 from graphgym.utils.agg_runs import agg_runs
 from graphgym.utils.comp_budget import params_count
 from graphgym.utils.device import auto_select_device
+
+def build_message_passing_node_index(agg_node_scatter, tree, level, v, parents):
+    for parent in parents:
+        if parent in tree:
+            for child in tree[parent]:
+                agg_node_scatter[level][child].append(parent)
+            build_message_passing_node_index(agg_node_scatter, tree, level + 1, v, tree[parent])
+
 
 if __name__ == '__main__':
     # Load cmd line args
@@ -36,6 +45,34 @@ if __name__ == '__main__':
         # Set machine learning pipeline
         datasets = create_dataset()
         loaders = create_loader(datasets)
+
+        def add_hop_info(batch):
+            nx_g = nx.Graph(batch.edge_index.T.tolist())
+            hops = cfg['localWL']['hops']
+
+            agg_node_index = [[[] for _ in range(batch.node_feature.shape[0])] for _ in range(hops)]
+
+            # nodes = max_reaching_centrality(nx_g, 10)
+            nodes = nx_g
+            print('vertex cover: {}, original nodes: {}'.format(len(nodes), len(nx_g)))
+            for v in nodes:
+                build_message_passing_node_index(agg_node_index, dict(nx.bfs_successors(nx_g, v, hops)), 0, v, [v])
+
+            agg_scatter = [
+                torch.tensor([j for j in range(batch.node_feature.shape[0]) for _ in level_node_index[j]], device=cfg.device)
+                for
+                level_node_index in agg_node_index]
+
+            agg_node_index = [torch.tensor([i for j in agg_node_index_k for i in j], device=cfg.device) for
+                              agg_node_index_k
+                              in agg_node_index]
+
+            batch.agg_scatter = agg_scatter
+            batch.agg_node_index = agg_node_index
+            return batch
+
+        loaders = list(map(lambda loader: list(map(add_hop_info, loader)), loaders))
+
         loggers = create_logger()
         model = create_model()
         optimizer = create_optimizer(model.parameters())

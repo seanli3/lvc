@@ -7,6 +7,8 @@ from ogb.graphproppred import PygGraphPropPredDataset
 from graphgym.cmd_args import parse_args
 import torch
 import pickle
+from torch_geometric.utils import degree
+import torch_geometric.transforms as T
 from torch_geometric.datasets import (PPI, Amazon, Coauthor, KarateClub,
                                       MNISTSuperpixels, Planetoid, QM7b,
                                       TUDataset, LINKXDataset, WebKB, WikipediaNetwork, Actor)
@@ -29,13 +31,16 @@ def max_reaching_centrality(graph, k):
         q = sorted(q, key=lambda x:x[1])
     return list(map(lambda x:x[0], q))
 
-def build_message_passing_node_index(agg_node_scatter, tree, level, v, parents):
-    for parent in parents:
-        if parent in tree:
-            for child in tree[parent]:
-                agg_node_scatter[level][child].append(parent)
-            build_message_passing_node_index(agg_node_scatter, tree, level + 1, v, tree[parent])
+class NormalizedDegree(object):
+    def __init__(self, mean, std):
+        self.mean = mean
+        self.std = std
 
+    def __call__(self, data):
+        deg = degree(data.edge_index[0], dtype=torch.float)
+        deg = (deg - self.mean) / self.std
+        data.x = deg.view(-1, 1)
+        return
 
 def load_dataset_example(format, name, dataset_dir):
     args = parse_args()
@@ -51,6 +56,19 @@ def load_dataset_example(format, name, dataset_dir):
                 dataset_raw = TUDataset(dataset_dir, name, transform=T.Constant())
             else:
                 dataset_raw = TUDataset(dataset_dir, name[3:])
+                if dataset_raw.data.num_node_features  == 0:
+                    max_degree = 0
+                    degs = []
+                    for data in dataset_raw:
+                        degs += [degree(data.edge_index[0], dtype=torch.long)]
+                        max_degree = max(max_degree, degs[-1].max().item())
+
+                    if max_degree < 1000:
+                        dataset_raw.transform = T.OneHotDegree(max_degree)
+                    else:
+                        deg = torch.cat(degs, dim=0).to(torch.float)
+                        mean, std = deg.mean().item(), deg.std().item()
+                        dataset_raw.transform = NormalizedDegree(mean, std)
             # TU_dataset only has graph-level label
             # The goal is to have synthetic tasks
             # that select smallest 100 graphs that have more than 200 edges
@@ -112,38 +130,7 @@ def load_dataset_example(format, name, dataset_dir):
         split_idx = dataset_raw.get_idx_split()
         return graphs, split_idx
 
-    x = dataset_raw.data.x
-    nx_g = to_networkx(dataset_raw.data)
-    hops = cfg['localWL']['hops']
-
-    def agg_feature(tree, node, local_features):
-        if node in tree:
-            for n in tree[node]:
-                local_features[n] += local_features[node]
-                agg_feature(tree, n, local_features)
-
-    agg_node_index = [[[] for _ in range(dataset_raw.data.num_nodes)] for _ in range(hops)]
-
-    # nodes = max_reaching_centrality(nx_g, 10)
-    nodes = nx_g
-    print('vertex cover: {}, original nodes: {}'.format(len(nodes), len(nx_g)))
-    for v in nodes:
-        build_message_passing_node_index(agg_node_index, dict(nx.bfs_successors(nx_g, v, hops)), 0, v, [v])
-
-    agg_scatter = [
-        torch.tensor([j for j in range(dataset_raw.data.num_nodes) for _ in level_node_index[j]], device=cfg.device) for
-        level_node_index in agg_node_index]
-
-    agg_node_index = [torch.tensor([i for j in agg_node_index_k for i in j], device=cfg.device) for agg_node_index_k
-                           in agg_node_index]
-
-    dataset_raw.data.agg_scatter = agg_scatter
-    dataset_raw.data.agg_node_index = agg_node_index
-
-
     graphs = GraphDataset.pyg_to_graphs(dataset_raw)
-    graphs[0].agg_scatter = agg_scatter
-    graphs[0].agg_node_index = agg_node_index
     return graphs
 
 register_loader('localWL', load_dataset_example)

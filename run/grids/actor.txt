@@ -7,7 +7,7 @@
 # (1) dataset configurations
 dataset.format format ['PyG']
 # dataset.name dataset ['Amazon Photo','Cornell','Wisconsin','Chameleon','Squirrel','PubMed','CiteSeer','Cora']
-dataset.name dataset ['Cornell','Wisconsin','Squirrel','CiteSeer']
+dataset.name dataset ['Actor']
 dataset.task task ['node']
 dataset.transductive trans [True]
 dataset.augment_feature feature [[]]
