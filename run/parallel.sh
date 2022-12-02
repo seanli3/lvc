@@ -10,7 +10,7 @@ MAIN=${4:-main}
     if [ "$CONFIG" != "$CONFIG_DIR/*.yaml" ]; then
       ((CUR_JOBS >= MAX_JOBS)) && wait -n
       echo "Job launched: $CONFIG"
-      python $MAIN.py --cfg $CONFIG --repeat $REPEAT --mark_done &
+      PYTHONPATH=/home/sean/graphgym  python $MAIN.py --cfg $CONFIG --repeat $REPEAT --mark_done &
       ((CUR_JOBS < MAX_JOBS)) && sleep 1
       ((++CUR_JOBS))
     fi

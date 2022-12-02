@@ -467,6 +467,8 @@ def set_cfg(cfg):
 
     cfg.localWL.dropout = 0.8
 
+    cfg.localWL.walk = 'bfs'
+
     # Set user customized cfgs
     for func in register.config_dict.values():
         func(cfg)

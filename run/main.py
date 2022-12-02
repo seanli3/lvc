@@ -16,6 +16,47 @@ from graphgym.train import train
 from graphgym.utils.agg_runs import agg_runs
 from graphgym.utils.comp_budget import params_count
 from graphgym.utils.device import auto_select_device
+from collections import defaultdict
+
+
+def dfs_edges(G, source=None, depth_limit=None):
+    if source is None:
+        # edges for all components
+        nodes = G
+    else:
+        # edges for components with source
+        nodes = [source]
+    visited = set()
+    if depth_limit is None:
+        depth_limit = len(G)
+    for start in nodes:
+        if start in visited:
+            continue
+        visited.add(start)
+        stack = [(start, depth_limit, iter(G[start]))]
+        while stack:
+            parent, depth_now, children = stack[-1]
+            try:
+                child = next(children)
+                if child not in visited:
+                    yield parent, child
+                    visited.add(child)
+                    if depth_now > 1:
+                        # sort node by degree, travese from the smallest degree
+                        degrees = list(G.degree(children))
+                        degrees.sort(key=lambda i: i[1])
+                        stack.append((child, depth_now - 1, map(lambda d: d[0], degrees) ))
+            except StopIteration:
+                stack.pop()
+
+
+def dfs_successors(G, source=None, depth_limit=None):
+    d = defaultdict(list)
+    for s, t in dfs_edges(G, source=source, depth_limit=depth_limit):
+        d[s].append(t)
+    return dict(d)
+
+
 
 def build_message_passing_node_index(agg_node_scatter, tree, level, v, parents):
     for parent in parents:
@@ -56,7 +97,9 @@ if __name__ == '__main__':
             nodes = nx_g
             print('vertex cover: {}, original nodes: {}'.format(len(nodes), len(nx_g)))
             for v in nodes:
-                build_message_passing_node_index(agg_node_index, dict(nx.bfs_successors(nx_g, v, hops)), 0, v, [v])
+                # FIXME: bfx_successors only visit nodes once, In a directed graph with edges [(0, 1), (1, 2), (2, 1)], the edge (2, 1) would not be visited
+                walk_tree = dict(nx.bfs_successors(nx_g, v, hops)) if cfg['localWL']['walk'] == 'bfs' else dict(dfs_successors(nx_g, v, hops))
+                build_message_passing_node_index(agg_node_index, walk_tree, 0, v, [v])
 
             agg_scatter = [
                 torch.tensor([j for j in range(batch.node_feature.shape[0]) for _ in level_node_index[j]], device=cfg.device)

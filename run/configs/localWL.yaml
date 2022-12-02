@@ -40,3 +40,5 @@ localWL:
   hops: 6
   pool: sum
   dropout: 0.9
+  walk: dfs
+
