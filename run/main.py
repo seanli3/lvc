@@ -33,7 +33,9 @@ def dfs_edges(G, source=None, depth_limit=None):
         if start in visited:
             continue
         visited.add(start)
-        stack = [(start, depth_limit, iter(G[start]))]
+        degrees = list(G.degree(G[start]))
+        degrees.sort(key=lambda i: i[1])
+        stack = [(start, depth_limit, map(lambda d: d[0], degrees))]
         while stack:
             parent, depth_now, children = stack[-1]
             try:
@@ -43,7 +45,7 @@ def dfs_edges(G, source=None, depth_limit=None):
                     visited.add(child)
                     if depth_now > 1:
                         # sort node by degree, travese from the smallest degree
-                        degrees = list(G.degree(children))
+                        degrees = list(G.degree(G[child]))
                         degrees.sort(key=lambda i: i[1])
                         stack.append((child, depth_now - 1, map(lambda d: d[0], degrees) ))
             except StopIteration:
@@ -55,6 +57,7 @@ def dfs_successors(G, source=None, depth_limit=None):
     for s, t in dfs_edges(G, source=source, depth_limit=depth_limit):
         d[s].append(t)
     return dict(d)
+
 
 
 
