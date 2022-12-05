@@ -469,6 +469,12 @@ def set_cfg(cfg):
 
     cfg.localWL.walk = 'bfs'
 
+    cfg.localWL.sortBy = 'degree'
+
+    cfg.localWL.reverse = False
+
+    cfg.localWL.beamSize = None
+
     # Set user customized cfgs
     for func in register.config_dict.values():
         func(cfg)

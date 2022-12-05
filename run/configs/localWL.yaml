@@ -41,4 +41,7 @@ localWL:
   pool: sum
   dropout: 0.9
   walk: dfs
+  sortBy: sim
+  reverse: True
+  beamSize: 2
 

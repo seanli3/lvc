@@ -16,10 +16,25 @@ from graphgym.train import train
 from graphgym.utils.agg_runs import agg_runs
 from graphgym.utils.comp_budget import params_count
 from graphgym.utils.device import auto_select_device
-from collections import defaultdict
+from collections import defaultdict, deque
+from sklearn.metrics.pairwise import cosine_similarity
 
+def sort_neighbours(G, v, neighbours, node_sim):
+    ret = neighbours
+    if cfg['localWL']['sortBy'] == 'degree':
+        degrees = list(G.degree(neighbours))
+        degrees.sort(key=lambda i: i[1], reverse=cfg['localWL']['reverse'])
+        ret = map(lambda d: d[0], degrees)
+    elif cfg['localWL']['sortBy'] == 'sim':
+        sim = torch.tensor(node_sim[v][neighbours])
+        sorted_indices = torch.argsort(sim, descending=cfg['localWL']['reverse'])
+        ret = (neighbours[i] for i in sorted_indices)
+    if cfg['localWL']['beamSize'] is not None:
+        return (i for i in list(ret)[:cfg['localWL']['beamSize']])
+    else:
+        return ret
 
-def dfs_edges(G, source=None, depth_limit=None):
+def dfs_edges(G, source=None, depth_limit=None, node_sim=None):
     if source is None:
         # edges for all components
         nodes = G
@@ -33,9 +48,8 @@ def dfs_edges(G, source=None, depth_limit=None):
         if start in visited:
             continue
         visited.add(start)
-        degrees = list(G.degree(G[start]))
-        degrees.sort(key=lambda i: i[1])
-        stack = [(start, depth_limit, map(lambda d: d[0], degrees))]
+        sorted_neighbours = sort_neighbours(G, start, list(G[start]), node_sim)
+        stack = [(start, depth_limit, sorted_neighbours)]
         while stack:
             parent, depth_now, children = stack[-1]
             try:
@@ -45,20 +59,55 @@ def dfs_edges(G, source=None, depth_limit=None):
                     visited.add(child)
                     if depth_now > 1:
                         # sort node by degree, travese from the smallest degree
-                        degrees = list(G.degree(G[child]))
-                        degrees.sort(key=lambda i: i[1])
-                        stack.append((child, depth_now - 1, map(lambda d: d[0], degrees) ))
+                        sorted_neighbours = sort_neighbours(G, child, list(G[child]), node_sim)
+                        stack.append((child, depth_now - 1, sorted_neighbours ))
             except StopIteration:
                 stack.pop()
 
 
-def dfs_successors(G, source=None, depth_limit=None):
+def dfs_successors(G, source=None, depth_limit=None, node_sim=None):
     d = defaultdict(list)
-    for s, t in dfs_edges(G, source=source, depth_limit=depth_limit):
+    for s, t in dfs_edges(G, source=source, depth_limit=depth_limit, node_sim=node_sim):
         d[s].append(t)
     return dict(d)
 
+def generic_bfs_edges(G, source, neighbors=None, depth_limit=None, node_sim=None):
+    visited = {source}
+    if depth_limit is None:
+        depth_limit = len(G)
+    sorted_neighbours = sort_neighbours(G, source, list(neighbors(source)), node_sim)
+    queue = deque([(source, depth_limit, sorted_neighbours)])
+    while queue:
+        parent, depth_now, children = queue[0]
+        try:
+            child = next(children)
+            if child not in visited:
+                yield parent, child
+                visited.add(child)
+                if depth_now > 1:
+                    sorted_neighbours = sort_neighbours(G, child, list(neighbors(child)), node_sim)
+                    queue.append((child, depth_now - 1, sorted_neighbours))
+        except StopIteration:
+            queue.popleft()
 
+def bfs_edges(G, source, reverse=False, depth_limit=None, node_sim=None):
+    if reverse and G.is_directed():
+        successors = G.predecessors
+    else:
+        successors = G.neighbors
+    yield from generic_bfs_edges(G, source, successors, depth_limit, node_sim=node_sim)
+
+def bfs_successors(G, source, depth_limit=None, node_sim=None):
+    parent = source
+    children = []
+    for p, c in bfs_edges(G, source, depth_limit=depth_limit, node_sim=node_sim):
+        if p == parent:
+            children.append(c)
+            continue
+        yield (parent, children)
+        children = [c]
+        parent = p
+    yield (parent, children)
 
 
 def build_message_passing_node_index(agg_node_scatter, tree, level, v, parents):
@@ -93,6 +142,8 @@ if __name__ == '__main__':
         def add_hop_info(batch):
             nx_g = nx.Graph(batch.edge_index.T.tolist())
             hops = cfg['localWL']['hops']
+            node_sim = None if cfg['localWL']['sortBy'] != 'sim' else cosine_similarity(batch.node_feature,
+                                                                                          batch.node_feature)
 
             agg_node_index = [[[] for _ in range(batch.node_feature.shape[0])] for _ in range(hops)]
 
@@ -101,7 +152,7 @@ if __name__ == '__main__':
             print('vertex cover: {}, original nodes: {}'.format(len(nodes), len(nx_g)))
             for v in nodes:
                 # FIXME: bfx_successors only visit nodes once, In a directed graph with edges [(0, 1), (1, 2), (2, 1)], the edge (2, 1) would not be visited
-                walk_tree = dict(nx.bfs_successors(nx_g, v, hops)) if cfg['localWL']['walk'] == 'bfs' else dict(dfs_successors(nx_g, v, hops))
+                walk_tree = dict(nx.bfs_successors(nx_g, v, hops, node_sim)) if cfg['localWL']['walk'] == 'bfs' else dict(dfs_successors(nx_g, v, hops, node_sim))
                 build_message_passing_node_index(agg_node_index, walk_tree, 0, v, [v])
 
             agg_scatter = [
