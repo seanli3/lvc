@@ -19,7 +19,7 @@ from graphgym.utils.device import auto_select_device
 from collections import defaultdict, deque
 from sklearn.metrics.pairwise import cosine_similarity
 
-def sort_neighbours(G, v, neighbours, node_sim):
+def sort_neighbours(G, v, neighbours, node_sim, shortest_distance, visited):
     ret = neighbours
     if cfg['localWL']['sortBy'] == 'degree':
         degrees = list(G.degree(neighbours))
@@ -29,12 +29,18 @@ def sort_neighbours(G, v, neighbours, node_sim):
         sim = torch.tensor(node_sim[v][neighbours])
         sorted_indices = torch.argsort(sim, descending=cfg['localWL']['reverse'])
         ret = (neighbours[i] for i in sorted_indices)
+    if shortest_distance is not None and cfg['localWL']['walk'] == 'dfs':
+        # Ensure DFS follows DIT rule
+        neighbours_less_distance = set(filter(lambda n: shortest_distance[n] <= shortest_distance[v], neighbours))
+        ret = sorted(ret, key=lambda n: 0 if n in neighbours_less_distance else float('inf'))
+    # Filter out visited nodes before beam
+    ret = filter(lambda n: n not in visited, ret)
+    # Beam search
     if cfg['localWL']['beamSize'] is not None:
-        return (i for i in list(ret)[:cfg['localWL']['beamSize']])
-    else:
-        return ret
+        ret = (i for i in list(ret)[:cfg['localWL']['beamSize']])
+    return ret
 
-def dfs_edges(G, source=None, depth_limit=None, node_sim=None):
+def dfs_edges(G, source=None, depth_limit=None, node_sim=None, shortest_distance=None):
     if source is None:
         # edges for all components
         nodes = G
@@ -48,7 +54,7 @@ def dfs_edges(G, source=None, depth_limit=None, node_sim=None):
         if start in visited:
             continue
         visited.add(start)
-        sorted_neighbours = sort_neighbours(G, start, list(G[start]), node_sim)
+        sorted_neighbours = sort_neighbours(G, start, list(G[start]), node_sim, shortest_distance, visited)
         stack = [(start, depth_limit, sorted_neighbours)]
         while stack:
             parent, depth_now, children = stack[-1]
@@ -59,7 +65,7 @@ def dfs_edges(G, source=None, depth_limit=None, node_sim=None):
                     visited.add(child)
                     if depth_now > 1:
                         # sort node by degree, travese from the smallest degree
-                        sorted_neighbours = sort_neighbours(G, child, list(G[child]), node_sim)
+                        sorted_neighbours = sort_neighbours(G, child, list(G[child]), node_sim, shortest_distance, visited)
                         stack.append((child, depth_now - 1, sorted_neighbours ))
             except StopIteration:
                 stack.pop()
@@ -67,7 +73,8 @@ def dfs_edges(G, source=None, depth_limit=None, node_sim=None):
 
 def dfs_successors(G, source=None, depth_limit=None, node_sim=None):
     d = defaultdict(list)
-    for s, t in dfs_edges(G, source=source, depth_limit=depth_limit, node_sim=node_sim):
+    shortest_distance=nx.shortest_path_length(G, source)
+    for s, t in dfs_edges(G, source=source, depth_limit=depth_limit, node_sim=node_sim, shortest_distance=shortest_distance):
         d[s].append(t)
     return dict(d)
 
@@ -75,7 +82,7 @@ def generic_bfs_edges(G, source, neighbors=None, depth_limit=None, node_sim=None
     visited = {source}
     if depth_limit is None:
         depth_limit = len(G)
-    sorted_neighbours = sort_neighbours(G, source, list(neighbors(source)), node_sim)
+    sorted_neighbours = sort_neighbours(G, source, list(neighbors(source)), node_sim, None, visited)
     queue = deque([(source, depth_limit, sorted_neighbours)])
     while queue:
         parent, depth_now, children = queue[0]
@@ -85,7 +92,7 @@ def generic_bfs_edges(G, source, neighbors=None, depth_limit=None, node_sim=None
                 yield parent, child
                 visited.add(child)
                 if depth_now > 1:
-                    sorted_neighbours = sort_neighbours(G, child, list(neighbors(child)), node_sim)
+                    sorted_neighbours = sort_neighbours(G, child, list(neighbors(child)), node_sim, None, visited)
                     queue.append((child, depth_now - 1, sorted_neighbours))
         except StopIteration:
             queue.popleft()
@@ -152,7 +159,7 @@ if __name__ == '__main__':
             print('vertex cover: {}, original nodes: {}'.format(len(nodes), len(nx_g)))
             for v in nodes:
                 # FIXME: bfx_successors only visit nodes once, In a directed graph with edges [(0, 1), (1, 2), (2, 1)], the edge (2, 1) would not be visited
-                walk_tree = dict(nx.bfs_successors(nx_g, v, hops, node_sim)) if cfg['localWL']['walk'] == 'bfs' else dict(dfs_successors(nx_g, v, hops, node_sim))
+                walk_tree = dict(bfs_successors(nx_g, v, hops, node_sim)) if cfg['localWL']['walk'] == 'bfs' else dict(dfs_successors(nx_g, v, hops, node_sim))
                 build_message_passing_node_index(agg_node_index, walk_tree, 0, v, [v])
 
             agg_scatter = [
