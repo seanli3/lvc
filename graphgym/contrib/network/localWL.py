@@ -86,12 +86,13 @@ class LocalWLGNN(torch.nn.Module):
         # self.lins.append(nn.Linear(dim_in, cfg.gnn.dim_inner))
         self.lin =  nn.Linear(dim_in, cfg.gnn.dim_inner)
         hops = cfg['localWL']['hops']
+        max_path_length = hops if cfg['localWL']['walk'] == 'bfs' else cfg['localWL']['maxPathLen']
         # for _ in range(hops):
         #     self.lins.append(nn.Linear(dim_in, cfg.gnn.dim_inner))
         self.eps = nn.Parameter(torch.ones(1, device=cfg['device'])*0.1)
-        self.post_mp = GNNNodeHead(dim_in=cfg.gnn.dim_inner*(hops+1), dim_out=dim_out)
+        self.post_mp = GNNNodeHead(dim_in=cfg.gnn.dim_inner*(max_path_length+1), dim_out=dim_out)
         # self.beta1 = nn.ParameterList([nn.Parameter(torch.ones(1)*0.1) for _ in range(hops)])
-        self.beta2 = nn.ParameterList([nn.Parameter(torch.ones(1, device=cfg['device'])*0.1) for _ in range(hops)])
+        self.beta2 = nn.ParameterList([nn.Parameter(torch.ones(1, device=cfg['device'])*0.1) for _ in range(max_path_length)])
 
     def forward(self, b, loader):
         batch = deepcopy(b)

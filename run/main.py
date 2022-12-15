@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 
 import torch
 from torch_geometric import seed_everything
@@ -40,7 +41,7 @@ def sort_neighbours(G, v, neighbours, node_sim, shortest_distance, visited):
         ret = (i for i in list(ret)[:cfg['localWL']['beamSize']])
     return ret
 
-def dfs_edges(G, source=None, depth_limit=None, node_sim=None, shortest_distance=None):
+def dfs_edges(G, source=None, dist_limit=None, depth_limit=None, node_sim=None, shortest_distance=None):
     if source is None:
         # edges for all components
         nodes = G
@@ -60,7 +61,7 @@ def dfs_edges(G, source=None, depth_limit=None, node_sim=None, shortest_distance
             parent, depth_now, children = stack[-1]
             try:
                 child = next(children)
-                if child not in visited:
+                if child not in visited and shortest_distance[child] <= dist_limit:
                     yield parent, child
                     visited.add(child)
                     if depth_now > 1:
@@ -71,10 +72,12 @@ def dfs_edges(G, source=None, depth_limit=None, node_sim=None, shortest_distance
                 stack.pop()
 
 
-def dfs_successors(G, source=None, depth_limit=None, node_sim=None):
+def dfs_successors(G, source=None, dist_limit=None, depth_limit=None, node_sim=None):
+    # # Max path length is the number of nodes
+    # sys.setrecursionlimit(G.number_of_nodes() + depth_limit)
     d = defaultdict(list)
     shortest_distance=nx.shortest_path_length(G, source)
-    for s, t in dfs_edges(G, source=source, depth_limit=depth_limit, node_sim=node_sim, shortest_distance=shortest_distance):
+    for s, t in dfs_edges(G, dist_limit=dist_limit, depth_limit=depth_limit, source=source, node_sim=node_sim, shortest_distance=shortest_distance):
         d[s].append(t)
     return dict(d)
 
@@ -121,6 +124,8 @@ def build_message_passing_node_index(agg_node_scatter, tree, level, v, parents):
     for parent in parents:
         if parent in tree:
             for child in tree[parent]:
+                while level >= len(agg_node_scatter):
+                    agg_node_scatter.append([[] for _ in range(len(agg_node_scatter[0]))])
                 agg_node_scatter[level][child].append(parent)
             build_message_passing_node_index(agg_node_scatter, tree, level + 1, v, tree[parent])
 
@@ -152,14 +157,17 @@ if __name__ == '__main__':
             node_sim = None if cfg['localWL']['sortBy'] != 'sim' else cosine_similarity(batch.node_feature,
                                                                                           batch.node_feature)
 
-            agg_node_index = [[[] for _ in range(batch.node_feature.shape[0])] for _ in range(hops)]
+            agg_node_index = [[[] for _ in range(batch.node_feature.shape[0])]]
 
             # nodes = max_reaching_centrality(nx_g, 10)
             nodes = nx_g
             print('vertex cover: {}, original nodes: {}'.format(len(nodes), len(nx_g)))
             for v in nodes:
                 # FIXME: bfx_successors only visit nodes once, In a directed graph with edges [(0, 1), (1, 2), (2, 1)], the edge (2, 1) would not be visited
-                walk_tree = dict(bfs_successors(nx_g, v, hops, node_sim)) if cfg['localWL']['walk'] == 'bfs' else dict(dfs_successors(nx_g, v, hops, node_sim))
+                walk_tree = dict(bfs_successors(nx_g, v, depth_limit=hops, node_sim=node_sim)) \
+                    if cfg['localWL']['walk'] == 'bfs' else \
+                    dict(dfs_successors(nx_g, v, dist_limit=hops,
+                                        depth_limit=cfg['localWL']['maxPathLen'],node_sim=node_sim))
                 build_message_passing_node_index(agg_node_index, walk_tree, 0, v, [v])
 
             agg_scatter = [

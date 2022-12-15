@@ -475,6 +475,8 @@ def set_cfg(cfg):
 
     cfg.localWL.beamSize = None
 
+    cfg.localWL.maxPathLen = 20
+
     # Set user customized cfgs
     for func in register.config_dict.values():
         func(cfg)
