@@ -90,9 +90,11 @@ class LocalWLGNN(torch.nn.Module):
         # for _ in range(hops):
         #     self.lins.append(nn.Linear(dim_in, cfg.gnn.dim_inner))
         self.eps = nn.Parameter(torch.ones(1, device=cfg['device'])*0.1)
-        self.post_mp = GNNNodeHead(dim_in=cfg.gnn.dim_inner*(max_path_length+1), dim_out=dim_out)
-        # self.beta1 = nn.ParameterList([nn.Parameter(torch.ones(1)*0.1) for _ in range(hops)])
-        self.beta2 = nn.ParameterList([nn.Parameter(torch.ones(1, device=cfg['device'])*0.1) for _ in range(max_path_length)])
+        Head = GNNNodeHead if cfg['dataset']['task'] == 'node' else GNNGraphHead
+        self.post_mp = Head(dim_in=cfg.gnn.dim_inner*(max_path_length+1), dim_out=dim_out)
+        self.beta1 = nn.ParameterList([nn.Parameter(torch.ones(1, device=cfg['device'])*0.) for _ in range(max_path_length)])
+        self.beta2 = nn.ParameterList([nn.Parameter(torch.ones(1, device=cfg['device'])*0.) for _ in range(max_path_length)])
+        self.beta3 = nn.ParameterList([nn.Parameter(torch.ones(1, device=cfg['device'])*0.) for _ in range(max_path_length)])
 
     def forward(self, b, loader):
         batch = deepcopy(b)
@@ -103,12 +105,14 @@ class LocalWLGNN(torch.nn.Module):
 
         x = self.lin(x)
         out = (1+self.eps)*x
+        h = x
         for hop in range(1, len(agg_node_index) + 1):
-            h = x[agg_scatter[hop-1]]
-            h = torch.zeros(x.shape[0], h.shape[1], device=x.device).scatter_reduce(
-                    0, agg_node_index[hop-1].view(-1, 1).broadcast_to(h.shape), h, reduce=cfg.localWL.pool,
+            h_v = (1+self.beta1[hop-1])*h[agg_scatter[hop-1]] + x[agg_node_index[hop-1]]
+            h = x.scatter_reduce(
+                    0, agg_node_index[hop-1].view(-1, 1).broadcast_to(h_v.shape), h_v, reduce=cfg.localWL.pool,
                     include_self=False)
-            h = (1+self.beta2[hop-1])*h
+            h = h + (1+self.beta2[hop-1]*x)
+            h = (1+self.beta3[hop-1])*h
             out = torch.cat([out, h], dim=1)
             # out =  h
         out = F.dropout(out, p=cfg.localWL.dropout, training=self.training)
