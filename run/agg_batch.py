@@ -1,6 +1,6 @@
 import argparse
 
-from graphgym.utils.agg_runs import agg_batch
+from torch_geometric.graphgym.utils.agg_runs import agg_batch
 
 
 def parse_args():

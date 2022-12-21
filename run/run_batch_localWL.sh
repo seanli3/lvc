@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 CONFIG=localWL
-GRID=localWL
+GRID=bfs
 REPEAT=2
 MAX_JOBS=8
 

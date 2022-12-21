@@ -1,30 +1,28 @@
 # The recommended basic settings for GNN
 out_dir: results
 dataset:
-  format: PyG
-  name: TU_PROTEINS
+  format: OGB
+  name: ogbg-molhiv
   task: graph
   task_type: classification
-  transductive: True
-  split: [0.8, 0.2]
-  augment_feature: []
-  augment_feature_dims: [0]
-  augment_feature_repr: position
-  augment_label: ''
-  augment_label_dims: 0
-  transform: none
+  node_encoder: True
+  node_encoder_name: Atom
+  edge_encoder: True
+  edge_encoder_name: Bond
 train:
-  batch_size: 32
-  eval_period: 20
+  batch_size: 128
+  eval_period: 1
   ckpt_period: 100
+  sampler: full_batch
 model:
-  type: localWL_graph
+  type: localWL
   loss_fun: cross_entropy
   edge_decoding: dot
   graph_pooling: add
 gnn:
+  layers_pre_mp: 1
   layers_post_mp: 1
-  dim_inner: 256
+  dim_inner: 300
   layer_type: generalconv
   stage_type: stack
   batchnorm: True
@@ -37,6 +35,11 @@ optim:
   base_lr: 0.01
   max_epoch: 400
 localWL:
-  hops: 4
+  hops: 3
   pool: sum
-  dropout: 0.3
+  dropout: 0.5
+  walk: bfs
+  sortBy: None
+  reverse: False
+  beamSize: None
+  maxPathLen: 4
