@@ -65,44 +65,41 @@ def dfs_successors(G, source=None, dist_limit=None, depth_limit=None, node_sim=N
         d[s].append(t)
     return dict(d)
 
-def generic_bfs_edges(G, source, neighbors=None, depth_limit=None, node_sim=None):
+def bfs_successors(G, source, depth_limit=None, node_sim=None, sort_neighbours=None):
     visited = {source}
     if depth_limit is None:
         depth_limit = len(G)
-    sorted_neighbours = sort_neighbours(G, source, list(neighbors(source)), node_sim, None, visited)
-    queue = deque([(source, depth_limit, sorted_neighbours)])
+    if sort_neighbours:
+        sorted_neighbours = sort_neighbours(G, source, list(G.neighbors(source)), node_sim, None, visited)
+    else:
+        sorted_neighbours = G.neighbors(source)
+    queue = deque([(source, 1, sorted_neighbours)])
+    depth_now = 0
+    depth_now_visited = {source}
+    children = []
     while queue:
-        parent, depth_now, children = queue[0]
+        depth_next = queue[0][1]
+        if depth_now < depth_next:
+            visited.update(depth_now_visited)
+            depth_now_visited = set()
+        parent, depth_now, neighbours = queue[0]
         try:
-            child = next(children)
+            child = next(neighbours)
             if child not in visited:
-                yield parent, child
-                visited.add(child)
-                if depth_now > 1:
-                    sorted_neighbours = sort_neighbours(G, child, list(neighbors(child)), node_sim, None, visited)
-                    queue.append((child, depth_now - 1, sorted_neighbours))
+                children.append(child)
+                # avoid adding the same child twice (when there is a loop)
+                if depth_now < depth_limit and child not in depth_now_visited:
+                    if sort_neighbours:
+                        sorted_neighbours = sort_neighbours(G, child, list(G.neighbors(child)), node_sim, None, visited)
+                    else:
+                        sorted_neighbours = G.neighbors(child)
+                    queue.append((child, depth_now + 1, sorted_neighbours))
+                depth_now_visited.add(child)
         except StopIteration:
             queue.popleft()
-
-def bfs_edges(G, source, reverse=False, depth_limit=None, node_sim=None):
-    if reverse and G.is_directed():
-        successors = G.predecessors
-    else:
-        successors = G.neighbors
-    yield from generic_bfs_edges(G, source, successors, depth_limit, node_sim=node_sim)
-
-def bfs_successors(G, source, depth_limit=None, node_sim=None):
-    parent = source
-    children = []
-    for p, c in bfs_edges(G, source, depth_limit=depth_limit, node_sim=node_sim):
-        if p == parent:
-            children.append(c)
-            continue
-        yield (parent, children)
-        children = [c]
-        parent = p
-    yield (parent, children)
-
+            if children:
+                yield (parent, children)
+            children = []
 
 def build_message_passing_node_index(agg_node_scatter, tree, level, v, parents):
     for parent in parents:
