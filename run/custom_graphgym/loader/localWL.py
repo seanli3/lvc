@@ -8,9 +8,10 @@ import pickle
 from torch_geometric.utils import degree
 import torch_geometric.transforms as T
 from sklearn.model_selection import StratifiedKFold
+from torch_geometric.data import InMemoryDataset
 from torch_geometric.datasets import (PPI, Amazon, Coauthor, KarateClub,
                                       MNISTSuperpixels, Planetoid, QM7b,
-                                      TUDataset, LINKXDataset, WebKB, WikipediaNetwork, Actor)
+                                      TUDataset, LINKXDataset, WebKB, WikipediaNetwork, Actor, ZINC)
 from .util import add_hop_info
 from torch_geometric.graphgym.loader import load_pyg, load_ogb
 
@@ -54,6 +55,19 @@ def load_dataset_example(format, name, dataset_dir):
             dataset_raw = WikipediaNetwork(dataset_dir, name=name, geom_gcn_preprocess=True)
         elif name in ["Actor"]:
             dataset_raw = Actor(dataset_dir)
+        elif name in ['ZINC']:
+            train = ZINC(dataset_dir, subset=True, split="train")
+            val = ZINC(dataset_dir, subset=True, split="val")
+            test = ZINC(dataset_dir, subset=True, split="test")
+            dataset_raw = InMemoryDataset()
+            train_data = [data for data in train]
+            val_data = [data for data in val]
+            test_data = [data for data in test]
+            dataset_raw.data, dataset_raw.slices = dataset_raw.collate(train_data + val_data + test_data)
+            dataset_raw.data.x = torch.nn.functional.one_hot(dataset_raw.data.x.view(-1)).float()
+            dataset_raw.data.train_graph_index = torch.arange(len(train))
+            dataset_raw.data.val_graph_index = torch.arange(len(train), len(train)+len(val))
+            dataset_raw.data.test_graph_index = torch.arange(len(train)+len(val), len(train)+len(val)+len(test))
         else:
             dataset_raw = load_pyg(name, dataset_dir)
     elif format == 'OGB':
@@ -72,6 +86,7 @@ def load_dataset_example(format, name, dataset_dir):
 
     splits = extract_splits(dataset_raw)
     add_aggregation_info(dataset_raw)
+    # Add splits back in after aggregation. Note: this has to be done after aggregation
     add_splits_if_not_available(dataset_raw, splits)
 
     return dataset_raw

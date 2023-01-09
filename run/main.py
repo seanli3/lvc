@@ -14,13 +14,13 @@ from torch_geometric.graphgym.config import (
     set_run_dir,
 )
 from torch_geometric.graphgym.logger import set_printing
-from torch_geometric.graphgym.model_builder import create_model
-from torch_geometric.graphgym.train import train
+from model_builder import create_model
 from torch_geometric.graphgym.utils.agg_runs import agg_runs
 from torch_geometric.graphgym.utils.comp_budget import params_count
 from torch_geometric.graphgym.utils.device import auto_select_device
 from torch_geometric.graphgym.config import set_cfg
 from torch_geometric.graphgym.train import GraphGymDataModule
+from train import train
 
 set_cfg(cfg)
 

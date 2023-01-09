@@ -32,3 +32,5 @@ def set_cfg_example(cfg):
 
     cfg.localWL.maxPathLen = 20
 
+    cfg.localWL.hop_pool = 'cat'
+
