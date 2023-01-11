@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.graphgym.config import cfg
 from torch_geometric.graphgym.register import register_network
-from torch_geometric.graphgym.models.layer import MLP
+from torch_geometric.graphgym.models.layer import MLP, new_layer_config
 import networkx as nx
 from torch_geometric.graphgym.register import pooling_dict
 import torch_geometric.graphgym.register as register
@@ -53,24 +53,36 @@ class LocalWLGNN(torch.nn.Module):
             dim_in = cfg.gnn.dim_inner
         GNNHead = register.head_dict[cfg.gnn.head]
 
-        if cfg.localWL.hop_pool == 'cat' and cfg.gnn.layers_mp > 1:
-            raise RuntimeError('Cannot use hop_pool=cat with layers_mp>1')
-
         if cfg.localWL.hop_pool == 'cat':
-            self.post_mp = GNNHead(dim_in=dim_in*(max_path_length+1), dim_out=dim_out)
+            import math
+            self.post_mp = GNNHead(dim_in=(dim_in*max_path_length)*cfg.gnn.layers_mp + dim_in, dim_out=dim_out)
         else:
             self.post_mp = GNNHead(dim_in=dim_in, dim_out=dim_out)
 
 
         self.max_path_length = max_path_length
         self.eps = nn.Parameter(torch.ones(1) * 0.1)
-        self.layers = nn.ParameterList()
-        for _ in range(cfg.gnn.layers_mp):
-            self.layers.append(nn.ParameterDict({
-                'beta1': nn.ParameterList([nn.Parameter(torch.ones(1)*0.) for _ in range(max_path_length)]),
-                'beta2': nn.ParameterList([nn.Parameter(torch.ones(1) * 0.) for _ in range(max_path_length)]),
-                'beta3': nn.ParameterList([nn.Parameter(torch.ones(1) * 0.) for _ in range(max_path_length)]),
-            }))
+        # self.layers = nn.ParameterList()
+        self.layers = nn.ModuleList()
+        for l in range(cfg.gnn.layers_mp):
+            # self.layers.append(nn.ParameterDict({
+            #     'beta1': nn.ParameterList([nn.Parameter(torch.ones(1)*0.) for _ in range(max_path_length)]),
+            #     'beta2': nn.ParameterList([nn.Parameter(torch.ones(1) * 0.) for _ in range(max_path_length)]),
+            #     'beta3': nn.ParameterList([nn.Parameter(torch.ones(1) * 0.) for _ in range(max_path_length)]),
+            # }))
+            self.layers.append(nn.ModuleList([
+                 MLP(
+                     new_layer_config(
+                         dim_in*int(math.pow((max_path_length+1), l)) if cfg.localWL.hop_pool == 'cat' else dim_in,
+                         dim_in,
+                         num_layers=2,
+                         has_act=False,
+                         has_bias=False,
+                         cfg=cfg
+                     )
+                 )
+                for _ in range(max_path_length)
+            ]))
 
     def forward(self, batch):
         if self.encoder is not None:
@@ -81,14 +93,15 @@ class LocalWLGNN(torch.nn.Module):
             batch.x, batch.edge_index, batch.batch
         for layer in self.layers:
             out = (1 + self.eps) * x
-            h = x
-            for hop in range(1, self.max_path_length+1):
-                h_v = (1+layer['beta1'][hop-1])*h[batch['agg_scatter_index_'+str(hop-1)]] + x[batch['agg_node_index_'+str(hop-1)]]
+            for hop in range(0, self.max_path_length):
+                # h_v = (1+layer['beta1'][hop])*x[batch['agg_scatter_index_'+str(hop)]]
+                h_v = x[batch['agg_scatter_index_'+str(hop)]]
                 h = x.scatter_reduce(
-                        0, batch['agg_node_index_'+ str(hop-1)].view(-1, 1).broadcast_to(h_v.shape), h_v, reduce=cfg.localWL.pool,
-                        include_self=False)
-                h = h + (1+layer['beta2'][hop-1]*x)
-                h = (1+layer['beta3'][hop-1])*h
+                        0, batch['agg_node_index_'+ str(hop)].view(-1, 1).broadcast_to(h_v.shape), h_v, reduce=cfg.localWL.pool,
+                        include_self=True)
+                h = layer[hop](h)
+                # h = h + (1+layer['beta2'][hop]*x)
+                # h = (1+layer['beta3'][hop])*h
                 if cfg.localWL.hop_pool == 'cat':
                     out = torch.cat([out, h], dim=1)
                 elif cfg.localWL.hop_pool == 'sum':

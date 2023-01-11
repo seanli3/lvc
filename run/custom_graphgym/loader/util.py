@@ -56,7 +56,40 @@ def dfs_edges(G, source=None, dist_limit=None, depth_limit=None, node_sim=None, 
                 stack.pop()
 
 
-def dfs_successors(G, source=None, dist_limit=None, depth_limit=None, node_sim=None):
+def dfs_successors(G, source=None, dist_limit=None, depth_limit=None, node_sim=None, sort_neighbours=None):
+    ret = defaultdict(list)
+    visited = {source}
+    if depth_limit is None:
+        depth_limit = len(G)
+    if dist_limit is None:
+        dist_limit = len(G)
+    if sort_neighbours:
+        sorted_neighbours = sort_neighbours(G, source, list(G.neighbors(source)), node_sim, None, visited)
+    else:
+        sorted_neighbours = G.neighbors(source)
+    stack = [(source, depth_limit, sorted_neighbours)]
+    depth_now = 0
+    path_now_visited = {source}
+    children = []
+    while stack:
+        min_depth_in_stack = min(map(lambda s:s[1], stack))
+        if depth_now < min_depth_in_stack:
+            visited.update(path_now_visited)
+            path_now_visited = set()
+        parent, depth_now, neighbours = stack[-1]
+        try:
+            child = next(neighbours)
+            if child not in visited and nx.shortest_path_length(G, source, child) <= dist_limit:
+                ret[parent].append(child)
+                yield parent, child
+                visited.add(child)
+                if depth_now > 1:
+                    # sort node by degree, travese from the smallest degree
+                    sorted_neighbours = sort_neighbours(G, child, list(G[child]), node_sim, shortest_distance, visited)
+                    stack.append((child, depth_now - 1, sorted_neighbours))
+        except StopIteration:
+            stack.pop()
+
     # # Max path length is the number of nodes
     # sys.setrecursionlimit(G.number_of_nodes() + depth_limit)
     d = defaultdict(list)
@@ -101,14 +134,35 @@ def bfs_successors(G, source, depth_limit=None, node_sim=None, sort_neighbours=N
                 yield (parent, children)
             children = []
 
-def build_message_passing_node_index(agg_node_scatter, tree, level, v, parents):
+def build_message_passing_node_index(agg_node_scatter, tree, depth_limit, level, v, parents):
     for parent in parents:
         if parent in tree:
             for child in tree[parent]:
                 while level >= len(agg_node_scatter):
                     agg_node_scatter.append([[] for _ in range(len(agg_node_scatter[0]))])
                 agg_node_scatter[level][child].append(parent)
-            build_message_passing_node_index(agg_node_scatter, tree, level + 1, v, tree[parent])
+                tmp = [child]
+                if level < depth_limit+1:
+                    for l in range(level+1, depth_limit):
+                        while l >= len(agg_node_scatter):
+                            agg_node_scatter.append([[] for _ in range(len(agg_node_scatter[0]))])
+                        chidren = []
+                        for t in tmp :
+                            if t in tree:
+                                for c in tree[t]:
+                                    chidren.append(c)
+                                    agg_node_scatter[l][c].append((parent))
+                        tmp = chidren
+            build_message_passing_node_index(agg_node_scatter, tree, depth_limit, level + 1, v, tree[parent])
+
+
+def build_reverse_walk(walk):
+    new_dic = {}
+    for k, v in walk.items():
+        for x in v:
+            new_dic.setdefault(x, []).append(k)
+    return new_dic
+
 
 def add_hop_info(batch):
     nx_g = nx.Graph(batch.edge_index.T.tolist())
@@ -122,7 +176,6 @@ def add_hop_info(batch):
     nodes = nx_g
     # print('vertex cover: {}, original nodes: {}'.format(len(nodes), len(nx_g)))
     for v in nodes:
-        # FIXME: bfx_successors only visit nodes once, In a directed graph with edges [(0, 1), (1, 2), (2, 1)], the edge (2, 1) would not be visited
         walk_tree = dict(bfs_successors(nx_g, v, depth_limit=hops, node_sim=node_sim)) \
             if cfg['localWL']['walk'] == 'bfs' else \
             dict(dfs_successors(nx_g, v, dist_limit=hops,
