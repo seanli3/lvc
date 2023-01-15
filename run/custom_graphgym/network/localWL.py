@@ -73,7 +73,7 @@ class LocalWLGNN(torch.nn.Module):
             self.layers.append(nn.ModuleList([
                  MLP(
                      new_layer_config(
-                         dim_in*int(math.pow((max_path_length+1), l)) if cfg.localWL.hop_pool == 'cat' else dim_in,
+                         dim_in*(1+max_path_length*l) if cfg.localWL.hop_pool == 'cat' else dim_in,
                          dim_in,
                          num_layers=2,
                          has_act=False,
