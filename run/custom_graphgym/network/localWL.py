@@ -40,7 +40,7 @@ class LocalWLGNN(torch.nn.Module):
         # self.lin =  nn.Linear(dim_in, cfg.gnn.dim_inner)
 
         hops = cfg['localWL']['hops']
-        max_path_length = hops if cfg['localWL']['walk'] == 'bfs' else cfg['localWL']['maxPathLen']
+        max_path_length = hops
         # for _ in range(hops):
         #     self.lins.append(nn.Linear(dim_in, cfg.gnn.dim_inner))
         self.encoder = None
