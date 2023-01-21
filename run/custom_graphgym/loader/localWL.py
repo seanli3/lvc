@@ -12,7 +12,7 @@ from torch_geometric.data import InMemoryDataset
 from torch_geometric.datasets import (PPI, Amazon, Coauthor, KarateClub,
                                       MNISTSuperpixels, Planetoid, QM7b,
                                       TUDataset, LINKXDataset, WebKB, WikipediaNetwork, Actor, ZINC)
-from .util import add_hop_info
+from .util import add_hop_info_pyg
 from torch_geometric.graphgym.loader import load_pyg, load_ogb
 
 def max_degree(graph, k):
@@ -119,7 +119,7 @@ def extract_splits(dataset_raw):
 
 
 def add_aggregation_info(dataset_raw):
-    data_list = [add_hop_info(d) for d in dataset_raw]
+    data_list = [add_hop_info_pyg(d) for d in dataset_raw]
     max_path_len = 0
     for d in data_list:
         max_len = max(map(lambda key: int(key[-1]), filter(lambda key: 'agg_node_index' in key, d.keys)))

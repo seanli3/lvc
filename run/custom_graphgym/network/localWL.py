@@ -61,7 +61,7 @@ class LocalWLGNN(torch.nn.Module):
 
 
         self.max_path_length = max_path_length
-        self.eps = nn.Parameter(torch.ones(1) * 0.1)
+        self.eps = nn.ParameterList([nn.Parameter(torch.ones(1) * 0.1) for _ in range(cfg.gnn.layers_mp)])
         # self.layers = nn.ParameterList()
         self.layers = nn.ModuleList()
         for l in range(cfg.gnn.layers_mp):
@@ -91,15 +91,15 @@ class LocalWLGNN(torch.nn.Module):
 
         x, edge_index, x_batch, = \
             batch.x, batch.edge_index, batch.batch
-        for layer in self.layers:
-            out = (1 + self.eps) * x
+        for l in range(len(self.layers)):
+            out = (1 + self.eps[l]) * x
             for hop in range(0, self.max_path_length):
                 # h_v = (1+layer['beta1'][hop])*x[batch['agg_scatter_index_'+str(hop)]]
                 h_v = x[batch['agg_scatter_index_'+str(hop)]]
                 h = x.scatter_reduce(
                         0, batch['agg_node_index_'+ str(hop)].view(-1, 1).broadcast_to(h_v.shape), h_v, reduce=cfg.localWL.pool,
                         include_self=True)
-                h = layer[hop](h)
+                h = self.layers[l][hop](h)
                 # h = h + (1+layer['beta2'][hop]*x)
                 # h = (1+layer['beta3'][hop])*h
                 if cfg.localWL.hop_pool == 'cat':

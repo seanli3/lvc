@@ -4,7 +4,7 @@ import torchdrug as td
 from torchdrug import data
 import matplotlib
 import torch
-from torchdrug import core, tasks
+from torchdrug import core, tasks, models
 from torchdrug import datasets
 
 from custom import SynthonCompletion
@@ -29,8 +29,6 @@ args = parse_args()
 
 HOPS = args.hops
 WALK = args.walk
-synthon_model_path = "g2gs_synthon_model_hops_{}_walk_{}.pth".format(str(HOPS), WALK)
-reaction_model_path = "g2gs_reaction_model_hops_{}_walk_{}.pth".format(str(HOPS), WALK)
 # HOPS = 3
 # WALK = 'DFS'
 
@@ -80,22 +78,31 @@ add_aggregation_info(synthon_test, HOPS, WALK)
 add_aggregation_info(synthon_valid, HOPS, WALK)
 add_aggregation_info(synthon_train, HOPS, WALK)
 
-
+# reaction_model = models.RGCN(input_dim=reaction_dataset.node_feature_dim,
+#                     hidden_dims=[256, 256, 256, 256, 256, 256],
+#                     num_relation=reaction_dataset.num_bond_type,
+#                     concat_hidden=False)
 reaction_model = LocalWLGNN(input_dim=reaction_dataset.node_feature_dim, layers_pre_mp=1,
                             hidden_dim=256, layers_mp=5, hops=HOPS, dropout=0.2,
                             concat_hidden=False, readout='sum')
 reaction_task = tasks.CenterIdentification(reaction_model,
                                            feature=("graph", "atom", "bond", "reaction"))
 
+
 reaction_optimizer = torch.optim.Adam(reaction_task.parameters(), lr=1e-3)
 reaction_solver = core.Engine(reaction_task, reaction_train, reaction_valid,
                               reaction_test, reaction_optimizer,
-                              batch_size=128)
+                              batch_size=128, gpus=[1])
 
 reaction_solver.train(num_epoch=10)
 reaction_solver.evaluate("valid")
+reaction_model_path = "{}_reaction_model_hops_{}_walk_{}.pth".format(reaction_task.model._get_name(), str(HOPS), WALK)
 reaction_solver.save(reaction_model_path)
 
+# synthon_model = models.RGCN(input_dim=synthon_dataset.node_feature_dim,
+#                             hidden_dims=[256, 256, 256, 256, 256, 256],
+#                             num_relation=synthon_dataset.num_bond_type,
+#                             concat_hidden=True)
 synthon_model = LocalWLGNN(input_dim=synthon_dataset.node_feature_dim, layers_pre_mp=1,
                             hidden_dim=256, layers_mp=5, hops=HOPS, dropout=0.2,
                             concat_hidden=False, readout='sum')
@@ -104,9 +111,10 @@ synthon_task = SynthonCompletion(synthon_model, feature=("graph", "atom", "react
 synthon_optimizer = torch.optim.Adam(synthon_task.parameters(), lr=1e-3)
 synthon_solver = core.Engine(synthon_task, synthon_train, synthon_valid,
                              synthon_test, synthon_optimizer,
-                             batch_size=128)
+                             batch_size=128, gpus=[1])
 synthon_solver.train(num_epoch=10)
 synthon_solver.evaluate("valid")
+synthon_model_path = "{}_synthon_model_hops_{}_walk_{}.pth".format(synthon_task.model._get_name(), str(HOPS), WALK)
 synthon_solver.save(synthon_model_path)
 
 
@@ -121,9 +129,9 @@ reaction_valid_small = torch_data.random_split(reaction_valid, lengths)[0]
 
 optimizer = torch.optim.Adam(task.parameters(), lr=1e-3)
 solver = core.Engine(task, reaction_train, reaction_valid_small, reaction_test,
-                     optimizer, batch_size=128)
+                     optimizer, batch_size=128, gpus=[1])
 
 solver.load(reaction_model_path, load_optimizer=False)
 solver.load(synthon_model_path, load_optimizer=False)
-task.cpu()
+# task.cpu()
 solver.evaluate("valid")

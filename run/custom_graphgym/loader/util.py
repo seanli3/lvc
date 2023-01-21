@@ -33,6 +33,7 @@ def sort_neighbours(G, v, neighbours, node_sim, shortest_distance, visited):
         ret = (i for i in list(ret)[:cfg['localWL']['beamSize']])
     return ret
 
+
 def dfs_successors(G, source=None, dist_limit=None, depth_limit=None, node_sim=None, sort_neighbours=None):
     visited = {source}
     visit_time = {source: 0}
@@ -51,7 +52,7 @@ def dfs_successors(G, source=None, dist_limit=None, depth_limit=None, node_sim=N
     stack = [(source, depth_limit, sorted_neighbours)]
     back_edges = set()
     tree_edges = set()
-    ret = defaultdict(set)
+    child_parent = {}
     while stack:
         parent, depth_now, neighbours = stack[-1]
         visited.add(parent)
@@ -63,7 +64,7 @@ def dfs_successors(G, source=None, dist_limit=None, depth_limit=None, node_sim=N
                         back_edges.add((parent, child))
                 else:
                     visit_time[child] = max(visit_time.values()) + 1
-                    ret[child].add(parent)
+                    child_parent[child] = parent
                     tree_edges.add((parent, child))
                     if depth_now > 1:
                         if sort_neighbours:
@@ -74,8 +75,10 @@ def dfs_successors(G, source=None, dist_limit=None, depth_limit=None, node_sim=N
         except StopIteration:
             stack.pop()
 
-    b_u = sigma_df(kneighbors, back_edges, visit_time)
-    for k in ret:
+    b_u = sigma_df(kneighbors, back_edges, visit_time, child_parent)
+    ret = defaultdict(set)
+    for k in child_parent:
+        ret[k].add(child_parent[k])
         if k in b_u:
             ret[k].update(b_u[k])
     return ret
@@ -85,46 +88,49 @@ def find_crossover_bedges(back_edges, visit_time):
     crossover_bedges = defaultdict(set)
     for e1 in back_edges:
         for e2 in back_edges:
-            if visit_time[e1[0]] >= visit_time[e2[0]] > visit_time[e1[1]] >= visit_time[e2[1]]:
+            if visit_time[e1[0]] > visit_time[e2[0]] > visit_time[e1[1]] > visit_time[e2[1]]:
                 crossover_bedges[e1].add(e2)
                 crossover_bedges[e2].add(e1)
-            elif visit_time[e1[1]] <= visit_time[e2[1]] < visit_time[e1[0]] <= visit_time[e2[0]]:
+            elif visit_time[e1[1]] < visit_time[e2[1]] < visit_time[e1[0]] < visit_time[e2[0]]:
                 crossover_bedges[e1].add(e2)
                 crossover_bedges[e2].add(e1)
     return crossover_bedges
 
 
-def find_cover_bedges(v, bedges, visit_time):
+def find_cover_bedges(v, bedges, child_parent):
     for e in bedges:
-        if visit_time[e[1]] <= visit_time[v] <= visit_time[e[0]]:
+        path = bedge_path(e, child_parent)
+        if v in path:
             yield e
 
 
-def find_covered_vertices(be, visit_time, inv_visit_time):
-    low_time = visit_time[be[1]]
-    up_time = visit_time[be[0]]
-    for t in range(low_time, up_time+1):
-        if t in inv_visit_time:
-            yield inv_visit_time[t]
+def bedge_path(e, child_parent):
+    path = set()
+    path.add(e[0])
+    v = child_parent[e[0]]
+    path.add(v)
+    while v != e[1]:
+        v = child_parent[v]
+        path.add(v)
+    return path
 
 
-def sigma_df(vertices, bedges, visit_time):
+def find_covered_vertices(be, child_parent):
+    return bedge_path(be, child_parent)
+
+
+def sigma_df(vertices, bedges, visit_time, child_parent):
     sigma = defaultdict(set)
-    inv_visit_time = {v: k for k, v in visit_time.items()}
     crossover_bedges = find_crossover_bedges(bedges, visit_time)
     for v in vertices:
-        es = find_cover_bedges(v, bedges, visit_time)
+        es = find_cover_bedges(v, bedges, child_parent)
         for e in es:
+            sigma[v].update(find_covered_vertices(e, child_parent))
             cross_edges = crossover_bedges[e]
             for ce in cross_edges:
-                covered_vertices = find_covered_vertices(ce, visit_time, inv_visit_time)
+                covered_vertices = find_covered_vertices(ce, child_parent)
                 sigma[v].update(covered_vertices)
     return sigma
-
-
-
-
-
 
 
 def bfs_successors(G, source, depth_limit=None, node_sim=None, sort_neighbours=None):
@@ -189,18 +195,16 @@ def build_dfs_message_passing_node_index(G, agg_node_scatter, dist_limit, v):
     vertice_dist = nx.single_source_shortest_path_length(G, v, dist_limit)
     sigma = dfs_successors(G, v, dist_limit=dist_limit, node_sim=None)
     for n, dist in vertice_dist.items():
-        if n == 5 and dist == 1:
-            print()
         if dist == 0:
             continue
         if dist > len(agg_node_scatter):
-            agg_node_scatter.append([set() for _ in range(len(agg_node_scatter[0]))])
-        agg_node_scatter[dist-1][n].update(sigma[n])
+            agg_node_scatter.append([[] for _ in range(len(agg_node_scatter[0]))])
+        agg_node_scatter[dist-1][n] += list(sigma[n])
         children = set()
         tmp = sigma[n]
         for d in range(dist-1, 0, -1):
             for t in tmp:
-                agg_node_scatter[dist-1][n].update(sigma[t])
+                agg_node_scatter[dist-1][n] += list(sigma[t])
                 children.update(sigma[t])
             tmp = copy(children)
 
@@ -213,40 +217,56 @@ def build_reverse_walk(walk):
     return new_dic
 
 
-def add_hop_info(batch):
+def add_hop_info_pyg(batch):
     nx_g = nx.Graph(batch.edge_index.T.tolist())
+    x = batch.x
     hops = cfg['localWL']['hops']
-    node_sim = None if cfg['localWL']['sortBy'] != 'sim' else cosine_similarity(batch.x,
-                                                                                batch.x)
+    walk = cfg['localWL']['walk']
+    sort_by = cfg['localWL']['sortBy']
+    agg_scatter, agg_node_index = add_walk_info(hops, nx_g, sort_by, walk, x)
+    for i in range(len(agg_scatter)):
+        batch['agg_scatter_index_' + str(i)] = agg_scatter[i]
+    for i in range(len(agg_node_index)):
+        batch['agg_node_index_' + str(i)] = agg_node_index[i]
+    return batch
 
-    if cfg['localWL']['walk'] == 'bfs':
-        agg_node_index = [[[] for _ in range(batch.x.shape[0])]]
+
+def add_hop_info_drug(pair, hops, walk, sort_by=None):
+    for g in pair['graph']:
+        nx_g = nx.Graph(g.edge_list.t()[:2].t().tolist())
+        x = g.node_feature
+        agg_scatter, agg_node_index = add_walk_info(hops, nx_g, sort_by, walk, x)
+        for i in range(len(agg_scatter)):
+            g.meta_dict['agg_scatter_index_' + str(i)] = {'node reference'}
+            setattr(g, 'agg_scatter_index_' + str(i), agg_scatter[i])
+        for i in range(len(agg_node_index)):
+            g.meta_dict['agg_node_index_' + str(i)] = {'node reference'}
+            setattr(g, 'agg_node_index_' + str(i), agg_node_index[i])
+    return pair
+
+
+def add_walk_info(hops, nx_g, sort_by, walk, x):
+    node_sim = None if sort_by != 'sim' else cosine_similarity(x, x)
+    if walk == 'bfs':
+        agg_node_index = [[[] for _ in range(x.shape[0])]]
     else:
-        agg_node_index = [[set() for _ in range(batch.x.shape[0])]]
-
+        agg_node_index = [[[] for _ in range(x.shape[0])]]
     # nodes = max_reaching_centrality(nx_g, 10)
     nodes = nx_g
     # print('vertex cover: {}, original nodes: {}'.format(len(nodes), len(nx_g)))
     for v in nodes:
-        if cfg['localWL']['walk'] == 'bfs':
+        if walk == 'bfs':
             walk_tree = dict(bfs_successors(nx_g, v, depth_limit=hops, node_sim=node_sim))
             build_bfs_message_passing_node_index(agg_node_index, walk_tree, hops, 0, v, [v])
         else:
             build_dfs_message_passing_node_index(nx_g, agg_node_index, hops, v)
-
     agg_scatter = [
-        torch.tensor([j for j in range(batch.x.shape[0]) for _ in level_node_index[j]], device=batch.x.device)
+        torch.LongTensor([j for j in range(x.shape[0]) for _ in level_node_index[j]], device=x.device)
         for
         level_node_index in agg_node_index]
-
-    agg_node_index = [torch.tensor([i for j in list(agg_node_index_k) for i in j], device=batch.x.device) for
+    agg_node_index = [torch.LongTensor([i for j in list(agg_node_index_k) for i in j], device=x.device) for
                       agg_node_index_k
                       in agg_node_index]
-
-    for i in range(len(agg_scatter)):
-        batch['agg_scatter_index_'+str(i)] = agg_scatter[i]
-    for i in range(len(agg_node_index)):
-        batch['agg_node_index_'+str(i)] = agg_node_index[i]
-    return batch
+    return agg_scatter, agg_node_index
 
 
