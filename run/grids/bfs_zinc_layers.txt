@@ -1,0 +1,30 @@
+# Format for each row: name in config.py; alias; range to search
+# No spaces, except between these 3 fields
+# Line breaks are used to union different grid search spaces
+# Feel free to add '#' to add comments
+
+
+# (1) dataset configurations
+dataset.format format ['PyG']
+dataset.name dataset ['ZINC']
+dataset.task task ['graph']
+dataset.task_type task_type ['regression']
+dataset.node_encoder node_encoder [False]
+dataset.edge_encoder edge_encoder [False]
+dataset.task_type task_type ['regression']
+optim.base_lr lr [0.0005,0.0002,0.0001]
+# (2) The recommended GNN design space, 96 models in total
+gnn.layers_pre_mp l_pre [1,2]
+gnn.layers_mp l_mp [5]
+gnn.layers_post_mp l_post [1,2]
+gnn.dim_inner dim_in [128]
+localWL.hops hops [2,3,4]
+localWL.pool pool ['sum']
+localWL.dropout dropout [0.2]
+localWL.walk walk ['bfs']
+localWL.hop_pool h_pool ['cat']
+# localWL.sortBy sort ['sim','degree','none']
+# localWL.reverse reverse [True,False]
+# localWL.beamSize beam [8,None]
+
+
