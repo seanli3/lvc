@@ -5,3 +5,6 @@ run/datasets/data/
 .idea/
 /run/datasets/Cora/Cora/Cora/
 /run/results/example/
+/run/configs/example_node_grid_example/
+/run/datasets/
+/run/results/example_node_grid_example/

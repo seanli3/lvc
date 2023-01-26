@@ -72,6 +72,7 @@ def load_dataset_example(format, name, dataset_dir):
             dataset_raw = load_pyg(name, dataset_dir)
     elif format == 'OGB':
         dataset_raw = load_ogb(name.replace('_', '-'), dataset_dir)
+        dataset_raw.data.x = dataset_raw.data.x.float()
     elif format == 'nx':
         try:
             with open('{}/{}.pkl'.format(dataset_dir, name), 'rb') as file:
@@ -105,6 +106,20 @@ def add_splits_if_not_available(dataset_raw, splits):
             dataset_raw.data.train_graph_index = splits[0]
             dataset_raw.data.val_graph_index = splits[1]
             dataset_raw.data.test_graph_index = splits[2]
+    else:
+        from sklearn.model_selection import train_test_split
+        num_nodes = dataset_raw.data.num_nodes
+        train_index, val_test_index = train_test_split(torch.arange(num_nodes), test_size=0.4)
+        val_index, test_index = train_test_split(val_test_index, test_size=0.5)
+        train_mask = torch.zeros(dataset_raw.data.num_nodes).bool()
+        train_mask.scatter_(0, train_index, True)
+        val_mask = torch.zeros(dataset_raw.data.num_nodes).bool()
+        val_mask.scatter_(0, val_index, True)
+        test_mask = torch.zeros(dataset_raw.data.num_nodes).bool()
+        test_mask.scatter_(0, test_index, True)
+        dataset_raw.data.train_mask = train_mask
+        dataset_raw.data.val_mask = val_mask
+        dataset_raw.data.test_mask = test_mask
 
 
 def extract_splits(dataset_raw):

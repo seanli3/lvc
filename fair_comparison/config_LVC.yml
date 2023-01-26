@@ -1,0 +1,76 @@
+#
+# Copyright (C)  2020  University of Pisa
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+model:
+  - LVC
+device:
+  - cuda:1
+walk:
+  - dfs
+head:
+  - graph
+hops:
+  - 1
+  - 2
+layers_pre_mp:
+  - 1
+layers_mp:
+  - 2
+  - 3
+  - 4
+  - 5
+dim_inner:
+  - 64
+hop_pool:
+  - sum
+mlp_layer:
+  - 3
+pool:
+  - sum
+dropout:
+  - 0.2
+ldropout:
+  - 0.2
+batch_size:
+  - 128
+learning_rate:
+  - 0.01
+classifier_epochs:
+  - 1000
+optimizer:
+  - Adam
+scheduler:
+  -
+    class: StepLR
+    args:
+      step_size: 50
+      gamma: 0.5
+loss:
+  - MulticlassClassificationLoss
+l2:
+  - 0.
+gradient_clipping:
+  - null
+early_stopper:
+  -
+    class: Patience
+    args:
+      patience: 500
+      use_loss: False
+shuffle:
+  - True
+resume:
+  - False

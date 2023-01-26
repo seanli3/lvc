@@ -60,7 +60,7 @@ def dfs_successors(G, source=None, dist_limit=None, depth_limit=None, node_sim=N
             child = next(neighbours)
             if child in kneighbors:
                 if child in visited:
-                    if (child, parent) not in tree_edges and (child, parent) not in back_edges:
+                    if (child, parent) not in tree_edges and (child, parent) not in back_edges and child != parent:
                         back_edges.add((parent, child))
                 else:
                     visit_time[child] = max(visit_time.values()) + 1
@@ -191,9 +191,9 @@ def build_bfs_message_passing_node_index(agg_node_scatter, tree, depth_limit, le
             build_bfs_message_passing_node_index(agg_node_scatter, tree, depth_limit, level + 1, v, tree[parent])
 
 
-def build_dfs_message_passing_node_index(G, agg_node_scatter, dist_limit, v):
+def build_dfs_message_passing_node_index(G, agg_node_scatter, dist_limit, v, depth_limit=None):
     vertice_dist = nx.single_source_shortest_path_length(G, v, dist_limit)
-    sigma = dfs_successors(G, v, dist_limit=dist_limit, node_sim=None)
+    sigma = dfs_successors(G, v, dist_limit=dist_limit, depth_limit=depth_limit, node_sim=None)
     for n, dist in vertice_dist.items():
         if dist == 0:
             continue
@@ -223,7 +223,12 @@ def add_hop_info_pyg(batch):
     hops = cfg['localWL']['hops']
     walk = cfg['localWL']['walk']
     sort_by = cfg['localWL']['sortBy']
-    agg_scatter, agg_node_index = add_walk_info(hops, nx_g, sort_by, walk, x)
+    depth_limit = cfg['localWL']['maxPathLen']
+    if walk == 'dfs' and hops > 1:
+        agg_scatter, agg_node_index = add_walk_info(1, nx_g, sort_by, walk, x)
+        batch['agg_scatter_base_index'] = agg_scatter[0]
+        batch['agg_node_base_index'] = agg_node_index[0]
+    agg_scatter, agg_node_index = add_walk_info(hops, nx_g, sort_by, walk, x, depth_limit=depth_limit)
     for i in range(len(agg_scatter)):
         batch['agg_scatter_index_' + str(i)] = agg_scatter[i]
     for i in range(len(agg_node_index)):
@@ -245,7 +250,7 @@ def add_hop_info_drug(pair, hops, walk, sort_by=None):
     return pair
 
 
-def add_walk_info(hops, nx_g, sort_by, walk, x):
+def add_walk_info(hops, nx_g, sort_by, walk, x, depth_limit=None):
     node_sim = None if sort_by != 'sim' else cosine_similarity(x, x)
     if walk == 'bfs':
         agg_node_index = [[[] for _ in range(x.shape[0])]]
@@ -259,7 +264,7 @@ def add_walk_info(hops, nx_g, sort_by, walk, x):
             walk_tree = dict(bfs_successors(nx_g, v, depth_limit=hops, node_sim=node_sim))
             build_bfs_message_passing_node_index(agg_node_index, walk_tree, hops, 0, v, [v])
         else:
-            build_dfs_message_passing_node_index(nx_g, agg_node_index, hops, v)
+            build_dfs_message_passing_node_index(nx_g, agg_node_index, hops, v, depth_limit=depth_limit)
     agg_scatter = [
         torch.LongTensor([j for j in range(x.shape[0]) for _ in level_node_index[j]], device=x.device)
         for

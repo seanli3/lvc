@@ -34,3 +34,4 @@ def set_cfg_example(cfg):
 
     cfg.localWL.hop_pool = 'cat'
 
+    cfg.localWL.mlp_layer = 2
