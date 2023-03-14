@@ -3,6 +3,7 @@ import os
 import sys
 import torch
 import custom_graphgym  # noqa, register custom modules
+from copy import deepcopy
 
 from torch_geometric import seed_everything
 from torch_geometric.graphgym.cmd_args import parse_args
@@ -19,8 +20,79 @@ from torch_geometric.graphgym.utils.agg_runs import agg_runs
 from torch_geometric.graphgym.utils.comp_budget import params_count
 from torch_geometric.graphgym.utils.device import auto_select_device
 from torch_geometric.graphgym.config import set_cfg
-from torch_geometric.graphgym.train import GraphGymDataModule
 from train import train
+from torch_geometric.data.lightning_datamodule import LightningDataModule
+from torch_geometric.graphgym.loader import get_loader, create_dataset
+from torch.utils.data import DataLoader
+from custom_graphgym.loader.util import build_inductive_training_edge_index
+
+
+
+def create_loader():
+    """
+    Create data loader object
+
+    Returns: List of PyTorch data loaders
+
+    """
+    dataset = create_dataset()
+    # train loader
+    if cfg.dataset.task == 'graph':
+        id = dataset.data['train_graph_index']
+        loaders = [
+            get_loader(dataset[id], cfg.train.sampler, cfg.train.batch_size,
+                       shuffle=True)
+        ]
+        delattr(dataset.data, 'train_graph_index')
+    else:
+        if cfg.dataset.transductive:
+            loaders = [
+                get_loader(dataset, cfg.train.sampler, cfg.train.batch_size,
+                           shuffle=True)
+            ]
+        else:
+            edge_index = build_inductive_training_edge_index(dataset.data)
+
+            train_dataset = deepcopy(dataset)
+            train_dataset.data.edge_index = edge_index
+
+            loaders = [
+                get_loader(train_dataset, cfg.train.sampler, cfg.train.batch_size,
+                           shuffle=True)
+            ]
+
+    # val and test loaders
+    for i in range(cfg.share.num_splits - 1):
+        if cfg.dataset.task == 'graph':
+            split_names = ['val_graph_index', 'test_graph_index']
+            id = dataset.data[split_names[i]]
+            loaders.append(
+                get_loader(dataset[id], cfg.val.sampler, cfg.train.batch_size,
+                           shuffle=False))
+            delattr(dataset.data, split_names[i])
+        else:
+            loaders.append(
+                get_loader(dataset, cfg.val.sampler, cfg.train.batch_size,
+                           shuffle=False))
+
+    return loaders
+
+class GraphGymDataModule(LightningDataModule):
+    def __init__(self):
+        self.loaders = create_loader()
+        super().__init__(has_val=True, has_test=True)
+
+    def train_dataloader(self) -> DataLoader:
+        return self.loaders[0]
+
+    def val_dataloader(self) -> DataLoader:
+        # better way would be to test after fit.
+        # First call trainer.fit(...) then trainer.test(...)
+        return self.loaders[1]
+
+    def test_dataloader(self) -> DataLoader:
+        return self.loaders[2]
+
 
 set_cfg(cfg)
 

@@ -126,12 +126,14 @@ class LocalWLGNN(torch.nn.Module):
         x, edge_index, x_batch, = \
             batch.x, batch.edge_index, batch.batch
 
+        prefix = "" if cfg.dataset.transductive or not self.training else "train_"
+
         for l in range(len(self.layers)):
             out = (1 + self.eps[l]) * x
             if self.has_base_hop:
-                h_v = x[batch['agg_scatter_base_index']]
+                h_v = x[batch[prefix + 'agg_scatter_base_index']]
                 h = x.scatter_reduce(
-                    0, batch['agg_node_base_index'].view(-1, 1).broadcast_to(h_v.shape), h_v,
+                    0, batch[prefix + 'agg_node_base_index'].view(-1, 1).broadcast_to(h_v.shape), h_v,
                     reduce=cfg.localWL.pool,
                     include_self=True)
                 h = self.base_hop_layers[l](h)
@@ -145,9 +147,9 @@ class LocalWLGNN(torch.nn.Module):
 
             for hop in range(0, self.max_path_length):
                 # h_v = (1+layer['beta1'][hop])*x[batch['agg_scatter_index_'+str(hop)]]
-                h_v = x[batch['agg_scatter_index_'+str(hop)]]
+                h_v = x[batch[prefix + 'agg_scatter_index_'+str(hop)]]
                 h = x.scatter_reduce(
-                        0, batch['agg_node_index_'+ str(hop)].view(-1, 1).broadcast_to(h_v.shape), h_v, reduce=cfg.localWL.pool,
+                        0, batch[prefix + 'agg_node_index_'+ str(hop)].view(-1, 1).broadcast_to(h_v.shape), h_v, reduce=cfg.localWL.pool,
                         include_self=True)
                 h = self.layers[l][hop](h)
                 h = F.dropout(h, p=cfg.localWL.dropout, training=self.training)

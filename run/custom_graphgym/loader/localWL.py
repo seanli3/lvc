@@ -11,7 +11,7 @@ from sklearn.model_selection import StratifiedKFold
 from torch_geometric.data import InMemoryDataset
 from torch_geometric.datasets import (PPI, Amazon, Coauthor, KarateClub,
                                       MNISTSuperpixels, Planetoid, QM7b,
-                                      TUDataset, LINKXDataset, WebKB, WikipediaNetwork, Actor, ZINC)
+                                      TUDataset, LINKXDataset, WebKB, WikipediaNetwork, Actor, ZINC, Reddit2)
 from .util import add_hop_info_pyg
 from torch_geometric.graphgym.loader import load_pyg, load_ogb
 
@@ -55,6 +55,8 @@ def load_dataset_example(format, name, dataset_dir):
             dataset_raw = WikipediaNetwork(dataset_dir, name=name, geom_gcn_preprocess=True)
         elif name in ["Actor"]:
             dataset_raw = Actor(dataset_dir)
+        elif name in ["Reddit2"]:
+            dataset_raw = Reddit2(dataset_dir)
         elif name in ['ZINC']:
             train = ZINC(dataset_dir, subset=True, split="train")
             val = ZINC(dataset_dir, subset=True, split="val")

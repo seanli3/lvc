@@ -8,8 +8,9 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 def knbrs(G, start, k):
     nbrs = set([start])
-    for l in range(k):
-        nbrs.update(set((nbr for n in nbrs for nbr in G[n])))
+    if start in G:
+        for l in range(k):
+            nbrs.update(set((nbr for n in nbrs for nbr in G[n])))
     return nbrs
 
 def sort_neighbours(G, v, neighbours, node_sim, shortest_distance, visited):
@@ -46,9 +47,9 @@ def dfs_successors(G, source=None, dist_limit=None, depth_limit=None, node_sim=N
     kneighbors = set(kneighbors)
 
     if sort_neighbours:
-        sorted_neighbours = sort_neighbours(G, source, list(G.neighbors(source)), node_sim, None, visited)
+        sorted_neighbours = sort_neighbours(G, source, list(G.neighbors(source)) if source in G else iter([]), node_sim, None, visited)
     else:
-        sorted_neighbours = G.neighbors(source)
+        sorted_neighbours = G.neighbors(source) if source in G else iter([])
     stack = [(source, depth_limit, sorted_neighbours)]
     back_edges = set()
     tree_edges = set()
@@ -192,7 +193,10 @@ def build_bfs_message_passing_node_index(agg_node_scatter, tree, depth_limit, le
 
 
 def build_dfs_message_passing_node_index(G, agg_node_scatter, dist_limit, v, depth_limit=None):
-    vertice_dist = nx.single_source_shortest_path_length(G, v, dist_limit)
+    if v in G:
+        vertice_dist = nx.single_source_shortest_path_length(G, v, dist_limit)
+    else:
+        vertice_dist = {}
     sigma = dfs_successors(G, v, dist_limit=dist_limit, depth_limit=depth_limit, node_sim=None)
     for n, dist in vertice_dist.items():
         if dist == 0:
@@ -217,8 +221,30 @@ def build_reverse_walk(walk):
     return new_dic
 
 
+def build_inductive_training_edge_index(data):
+    edge_index = []
+    for i in range(data.edge_index.shape[1]):
+        e = data.edge_index[:, i].tolist()
+        if not (data.val_mask[e[0]] or data.test_mask[e[0]] or \
+                data.val_mask[e[1]] or data.test_mask[e[1]]):
+            edge_index.append([e[0], e[1]])
+    edge_index = torch.tensor(edge_index).T
+    return edge_index
+
+
 def add_hop_info_pyg(batch):
     nx_g = nx.Graph(batch.edge_index.T.tolist())
+    add_hop_info(batch, nx_g)
+
+    if not cfg.dataset.transductive:
+        train_edge_index = build_inductive_training_edge_index(batch)
+        train_nx_g = nx.Graph(train_edge_index.T.tolist())
+        add_hop_info(batch, train_nx_g, prefix="train_")
+
+    return batch
+
+
+def add_hop_info(batch, nx_g, prefix=""):
     x = batch.x
     hops = cfg['localWL']['hops']
     walk = cfg['localWL']['walk']
@@ -226,14 +252,13 @@ def add_hop_info_pyg(batch):
     depth_limit = cfg['localWL']['maxPathLen']
     if walk == 'dfs' and hops > 1:
         agg_scatter, agg_node_index = add_walk_info(1, nx_g, sort_by, walk, x)
-        batch['agg_scatter_base_index'] = agg_scatter[0]
-        batch['agg_node_base_index'] = agg_node_index[0]
+        batch[prefix+'agg_scatter_base_index'] = agg_scatter[0]
+        batch[prefix+'agg_node_base_index'] = agg_node_index[0]
     agg_scatter, agg_node_index = add_walk_info(hops, nx_g, sort_by, walk, x, depth_limit=depth_limit)
     for i in range(len(agg_scatter)):
-        batch['agg_scatter_index_' + str(i)] = agg_scatter[i]
+        batch[prefix+'agg_scatter_index_' + str(i)] = agg_scatter[i]
     for i in range(len(agg_node_index)):
-        batch['agg_node_index_' + str(i)] = agg_node_index[i]
-    return batch
+        batch[prefix+'agg_node_index_' + str(i)] = agg_node_index[i]
 
 
 def add_hop_info_drug(pair, hops, walk, sort_by=None):
