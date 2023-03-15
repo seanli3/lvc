@@ -45,7 +45,7 @@ def create_loader():
         ]
         delattr(dataset.data, 'train_graph_index')
     else:
-        if cfg.dataset.transductive:
+        if cfg.dataset.transductive or cfg.dataset.task == 'graph':
             loaders = [
                 get_loader(dataset, cfg.train.sampler, cfg.train.batch_size,
                            shuffle=True)

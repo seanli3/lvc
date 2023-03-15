@@ -126,7 +126,7 @@ class LocalWLGNN(torch.nn.Module):
         x, edge_index, x_batch, = \
             batch.x, batch.edge_index, batch.batch
 
-        prefix = "" if cfg.dataset.transductive or not self.training else "train_"
+        prefix = "" if cfg.dataset.transductive or cfg.dataset.task == 'graph' or not self.training else "train_"
 
         for l in range(len(self.layers)):
             out = (1 + self.eps[l]) * x

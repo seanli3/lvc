@@ -90,10 +90,10 @@ def find_crossover_bedges(back_edges, visit_time):
     crossover_bedges = defaultdict(set)
     for e1 in back_edges:
         for e2 in back_edges:
-            if visit_time[e1[0]] > visit_time[e2[0]] > visit_time[e1[1]] > visit_time[e2[1]]:
+            if visit_time[e1[0]] >= visit_time[e2[0]] > visit_time[e1[1]] > visit_time[e2[1]]:
                 crossover_bedges[e1].add(e2)
                 crossover_bedges[e2].add(e1)
-            elif visit_time[e1[1]] < visit_time[e2[1]] < visit_time[e1[0]] < visit_time[e2[0]]:
+            elif visit_time[e1[1]] <= visit_time[e2[1]] <= visit_time[e1[0]] < visit_time[e2[0]]:
                 crossover_bedges[e1].add(e2)
                 crossover_bedges[e2].add(e1)
     crossover_bedge_transitive_closure(crossover_bedges)
@@ -260,7 +260,7 @@ def add_hop_info_pyg(batch):
     nx_g = nx.Graph(batch.edge_index.T.tolist())
     add_hop_info(batch, nx_g)
 
-    if not cfg.dataset.transductive:
+    if not cfg.dataset.transductive and cfg.dataset.task != 'graph':
         train_edge_index = build_inductive_training_edge_index(batch)
         train_nx_g = nx.Graph(train_edge_index.T.tolist())
         add_hop_info(batch, train_nx_g, prefix="train_")
