@@ -90,13 +90,19 @@ def find_crossover_bedges(back_edges, visit_time):
     crossover_bedges = defaultdict(set)
     for e1 in back_edges:
         for e2 in back_edges:
-            if visit_time[e1[0]] >= visit_time[e2[0]] > visit_time[e1[1]] > visit_time[e2[1]]:
+            if visit_time[e1[0]] > visit_time[e2[0]] > visit_time[e1[1]] > visit_time[e2[1]]:
                 crossover_bedges[e1].add(e2)
                 crossover_bedges[e2].add(e1)
-            elif visit_time[e1[1]] <= visit_time[e2[1]] <= visit_time[e1[0]] < visit_time[e2[0]]:
+            elif visit_time[e1[1]] < visit_time[e2[1]] < visit_time[e1[0]] < visit_time[e2[0]]:
                 crossover_bedges[e1].add(e2)
                 crossover_bedges[e2].add(e1)
-    crossover_bedge_transitive_closure(crossover_bedges)
+            elif visit_time[e1[1]] == visit_time[e2[1]] and visit_time[e1[0]] != visit_time[e2[0]]:
+                crossover_bedges[e1].add(e2)
+                crossover_bedges[e2].add(e1)
+            elif visit_time[e1[1]] != visit_time[e2[1]] and visit_time[e1[0]] == visit_time[e2[0]]:
+                crossover_bedges[e1].add(e2)
+                crossover_bedges[e2].add(e1)
+    crossover_bedges = crossover_bedge_transitive_closure(crossover_bedges)
     return crossover_bedges
 
 
@@ -107,19 +113,12 @@ def crossover_bedge_transitive_closure(crossover_bedges):
         tmp = deepcopy(crossover_bedges)
         for e1 in crossover_bedges:
             for e2 in crossover_bedges[e1]:
-                if e2 not in crossover_bedges:
-                    tmp[e2] = {}
-                    has_new = True
-                    continue
                 for e3 in crossover_bedges[e2]:
-                    if e3 not in crossover_bedges:
-                        tmp[e3] = {}
-                        has_new = True
-                        continue
                     if e3 not in crossover_bedges[e1]:
                         has_new = True
                         tmp[e1].update(crossover_bedges[e2])
         crossover_bedges = deepcopy(tmp)
+    return crossover_bedges
 
 
 def find_cover_bedges(v, bedges, child_parent):

@@ -160,6 +160,7 @@ class NetWrapper:
         avg_time_per_epoch = float(time_per_epoch.mean())
 
         elapsed = format_time(avg_time_per_epoch)
+        print('average time per epoch {}'.format(elapsed))
 
         if early_stopper is not None:
             train_loss, train_acc, val_loss, val_acc, test_loss, test_acc, best_epoch = early_stopper.get_best_vl_metrics()
