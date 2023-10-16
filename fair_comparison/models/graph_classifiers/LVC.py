@@ -49,12 +49,15 @@ class LVC(torch.nn.Module):
 
         dim_inner = cfg.dim_inner
 
-        if cfg.hop_pool == 'cat':
-            import math
-            self.post_mp = GNNHead(dim_in=(dim_inner * max_path_length) * cfg.layers_mp + dim_inner,
-                                   dim_out=dim_out)
-        else:
+        if cfg.hop_pool == 'sum':
             self.post_mp = GNNHead(dim_in=dim_inner, dim_out=dim_out)
+        else:
+            if cfg.walk == 'dfs':
+                self.post_mp = GNNHead(dim_in=dim_inner * cfg.layers_mp + dim_inner,
+                                       dim_out=dim_out)
+            else:
+                self.post_mp = GNNHead(dim_in=(dim_inner * max_path_length) * cfg.layers_mp + dim_inner,
+                                   dim_out=dim_out)
 
         self.max_path_length = max_path_length
         self.eps = nn.ParameterList([nn.Parameter(torch.ones(1) * 0.1) for _ in range(cfg.layers_mp)])
@@ -67,18 +70,32 @@ class LVC(torch.nn.Module):
             #     'beta3': nn.ParameterList([nn.Parameter(torch.ones(1) * 0.) for _ in range(max_path_length)]),
             # }))
             in_dim = dim_in if l == 0 else dim_inner
-            self.layers.append(nn.ModuleList([
-                MLP(
-                    LayerConfig(
-                        dim_in=in_dim * (1 + max_path_length * l) if cfg.hop_pool == 'cat' else in_dim,
-                        dim_out=dim_inner,
-                        num_layers=cfg.mlp_layer,
-                        has_act=False,
-                        has_bias=False,
+            if cfg.walk == 'dfs':
+                self.layers.append(
+                    MLP(
+                        LayerConfig(
+                            dim_in=in_dim * (1+l) if cfg.hop_pool == 'cat' else in_dim,
+                            dim_out=dim_inner,
+                            num_layers=cfg.mlp_layer,
+                            has_act=False,
+                            has_bias=False,
+                        )
                     )
                 )
-                for _ in range(max_path_length)
-            ]))
+            else:
+                self.layers.append(nn.ModuleList([
+                    MLP(
+                        LayerConfig(
+                            dim_in=in_dim * (1 + max_path_length * l) if cfg.hop_pool == 'cat' else in_dim,
+                            dim_out=dim_inner,
+                            num_layers=cfg.mlp_layer,
+                            has_act=False,
+                            has_bias=False,
+                        )
+                    )
+                    for _ in range(max_path_length)
+                ]))
+
 
     def forward(self, data):
         cfg = self.cfg
@@ -92,14 +109,15 @@ class LVC(torch.nn.Module):
             batch.x, batch.edge_index, batch.batch
         for l in range(len(self.layers)):
             out = (1 + self.eps[l]) * x
-            for hop in range(0, self.max_path_length):
-                # h_v = (1+layer['beta1'][hop])*x[batch['agg_scatter_index_'+str(hop)]]
-                h_v = x[batch['agg_scatter_index_' + str(hop)]]
+            if self.cfg.walk == 'dfs':
+                agg_scatter_index = torch.cat([batch['agg_scatter_index_' + str(hop)] for hop in range(self.max_path_length)])
+                agg_node_index = torch.cat([batch['agg_node_index_' + str(hop)] for hop in range(self.max_path_length)])
+                h_v = x[agg_scatter_index]
                 h = x.scatter_reduce(
-                    0, batch['agg_node_index_' + str(hop)].view(-1, 1).broadcast_to(h_v.shape), h_v,
+                    0, agg_node_index.view(-1, 1).broadcast_to(h_v.shape), h_v,
                     reduce=cfg.pool,
                     include_self=True)
-                h = self.layers[l][hop](h)
+                h = self.layers[l](h)
                 h = F.dropout(h, p=cfg.ldropout, training=self.training)
                 # h = h + (1+layer['beta2'][hop]*x)
                 # h = (1+layer['beta3'][hop])*h
@@ -107,7 +125,23 @@ class LVC(torch.nn.Module):
                     out = torch.cat([out, h], dim=1)
                 elif cfg.hop_pool == 'sum':
                     out = out + h
-                # out =  h
+            else:
+                for hop in range(0, self.max_path_length):
+                    # h_v = (1+layer['beta1'][hop])*x[batch['agg_scatter_index_'+str(hop)]]
+                    h_v = x[batch['agg_scatter_index_' + str(hop)]]
+                    h = x.scatter_reduce(
+                        0, batch['agg_node_index_' + str(hop)].view(-1, 1).broadcast_to(h_v.shape), h_v,
+                        reduce=cfg.pool,
+                        include_self=True)
+                    h = self.layers[l][hop](h)
+                    h = F.dropout(h, p=cfg.ldropout, training=self.training)
+                    # h = h + (1+layer['beta2'][hop]*x)
+                    # h = (1+layer['beta3'][hop])*h
+                    if cfg.hop_pool == 'cat':
+                        out = torch.cat([out, h], dim=1)
+                    elif cfg.hop_pool == 'sum':
+                        out = out + h
+                    # out =  h
             out = F.dropout(out, p=cfg.dropout, training=self.training)
             x = out
 

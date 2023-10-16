@@ -51,6 +51,7 @@ class EndToEndExperiment(Experiment):
         train_loader, val_loader = dataset_getter.get_train_val(dataset, self.model_config['batch_size'],
                                                                 self.model_config['hops'],
                                                                 self.model_config['walk'],
+                                                                self.model_config['maxP'],
                                                                 shuffle=shuffle)
         model = model_class(dim_features=dataset.dim_features, dim_target=dataset.dim_target, config=self.model_config)
         net = NetWrapper(model, loss_function=loss_class(), device=self.model_config['device'])
@@ -97,10 +98,12 @@ class EndToEndExperiment(Experiment):
         train_loader, val_loader = dataset_getter.get_train_val(dataset, self.model_config['batch_size'],
                                                                 self.model_config['hops'],
                                                                 self.model_config['walk'],
+                                                                self.model_config['maxP'],
                                                                 shuffle=shuffle)
         test_loader = dataset_getter.get_test(dataset, self.model_config['batch_size'],
                                               self.model_config['hops'],
                                               self.model_config['walk'],
+                                              self.model_config['maxP'],
                                               shuffle=shuffle)
 
         model = model_class(dim_features=dataset.dim_features, dim_target=dataset.dim_target,

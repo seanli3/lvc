@@ -28,17 +28,17 @@ class DatasetGetter:
     def set_inner_k(self, k):
         self.inner_k = k
 
-    def get_train_val(self, dataset, batch_size, hops, walk, shuffle=True):
+    def get_train_val(self, dataset, batch_size, hops, walk, maxP=None, shuffle=True):
         train_loader, val_loader = dataset.get_model_selection_fold(self.outer_k, self.inner_k, batch_size, shuffle)
-        return add_aggregation_info(train_loader, hops, walk), add_aggregation_info(val_loader, hops, walk)
+        return add_aggregation_info(train_loader, hops, walk, maxP), add_aggregation_info(val_loader, hops, walk, maxP)
 
-    def get_test(self, dataset, batch_size, hops, walk, shuffle=True):
+    def get_test(self, dataset, batch_size, hops, walk, maxP=None, shuffle=True):
         test_loader = dataset.get_test_fold(self.outer_k, batch_size, shuffle)
-        return add_aggregation_info(test_loader, hops, walk)
+        return add_aggregation_info(test_loader, hops, walk, maxP)
 
 
-def add_aggregation_info(loader, hops, walk):
-    data_list = [add_hop_info_pyg(d, hops, walk) for d in loader]
+def add_aggregation_info(loader, hops, walk, maxP):
+    data_list = [add_hop_info_pyg(d, hops, walk, maxP) for d in loader]
     max_path_len = 0
     for d in data_list:
         max_len = max(map(lambda key: int(key[-1]), filter(lambda key: 'agg_node_index' in key, d.keys)))
@@ -52,10 +52,10 @@ def add_aggregation_info(loader, hops, walk):
     return data_list
 
 
-def add_hop_info_pyg(batch, hops, walk):
+def add_hop_info_pyg(batch, hops, walk, maxP):
     nx_g = nx.Graph(batch.edge_index.T.tolist())
     x = batch.x
-    agg_scatter, agg_node_index = add_walk_info(hops, nx_g, None, walk, x)
+    agg_scatter, agg_node_index = add_walk_info(hops, nx_g, None, walk, x, depth_limit=maxP)
     for i in range(len(agg_scatter)):
         batch['agg_scatter_index_' + str(i)] = agg_scatter[i]
     for i in range(len(agg_node_index)):
